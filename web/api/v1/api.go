@@ -30,6 +30,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage/local"
 	"github.com/prometheus/prometheus/storage/metric"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -77,6 +78,10 @@ type alertmanagerRetriever interface {
 	Alertmanagers() []string
 }
 
+type alertRetreiver interface {
+	AlertingRules() []*rules.AlertingRule
+}
+
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -101,18 +106,20 @@ type API struct {
 
 	targetRetriever       targetRetriever
 	alertmanagerRetriever alertmanagerRetriever
+	alertRetreiver        alertRetreiver
 
 	context func(r *http.Request) context.Context
 	now     func() model.Time
 }
 
 // NewAPI returns an initialized API type.
-func NewAPI(qe *promql.Engine, st local.Storage, tr targetRetriever, ar alertmanagerRetriever) *API {
+func NewAPI(qe *promql.Engine, st local.Storage, tr targetRetriever, ar alertmanagerRetriever, al alertRetreiver) *API {
 	return &API{
 		QueryEngine:           qe,
 		Storage:               st,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
+		alertRetreiver:        al,
 		context:               route.Context,
 		now:                   model.Now,
 	}
@@ -148,6 +155,7 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/targets", instr("targets", api.targets))
 	r.Get("/alertmanagers", instr("alertmanagers", api.alertmanagers))
+	r.Get("/alerts", instr("alerts", api.alerts))
 }
 
 type queryData struct {
@@ -435,6 +443,40 @@ func (api *API) alertmanagers(r *http.Request) (interface{}, *apiError) {
 	}
 
 	return ams, nil
+}
+
+// AlertDiscovery has info for all alerts
+type AlertDiscovery struct {
+	Alerts []*Alert `json:"alerts"`
+}
+
+// Alert has info about a alert
+type Alert struct {
+	Name        string         `json:"name"`
+	Query       string         `json:"query"`
+	Duration    string         `json:"duration"`
+	Labels      model.LabelSet `json:"labels"`
+	Annotations model.LabelSet `json:"annotations,omitempty"`
+	Status      string         `json:"status"`
+	Activesince *time.Time     `json:"activesince,omitempty"`
+}
+
+func (api *API) alerts(r *http.Request) (interface{}, *apiError) {
+	alerts := api.alertRetreiver.AlertingRules()
+	res := &AlertDiscovery{Alerts: make([]*Alert, len(alerts))}
+	for i, val := range alerts {
+		res.Alerts[i] = &Alert{
+			Name:        val.Name(),
+			Query:       fmt.Sprintf("%v", val.Query()),
+			Duration:    val.Duration().String(),
+			Labels:      val.Labels(),
+			Annotations: val.Annotations(),
+			Status:      val.State().String(),
+			Activesince: val.Activesince(),
+		}
+	}
+
+	return res, nil
 }
 
 func respond(w http.ResponseWriter, data interface{}) {

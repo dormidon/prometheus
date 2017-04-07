@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/retrieval"
+	"github.com/prometheus/prometheus/rules"
 )
 
 type targetRetrieverFunc func() []*retrieval.Target
@@ -42,6 +43,12 @@ func (f targetRetrieverFunc) Targets() []*retrieval.Target {
 type alertmanagerRetrieverFunc func() []string
 
 func (f alertmanagerRetrieverFunc) Alertmanagers() []string {
+	return f()
+}
+
+type alertRetreiverFunc func() []*rules.AlertingRule
+
+func (f alertRetreiverFunc) AlertingRules() []*rules.AlertingRule {
 	return f()
 }
 
@@ -81,12 +88,30 @@ func TestEndpoints(t *testing.T) {
 		return []string{"http://alertmanager.example.com:8080/api/v1/alerts"}
 	})
 
+	expr, err := promql.ParseExpr(`absent(test_metric3) != 1`)
+	if err != nil {
+		t.Fatalf("Unable to parse alert expression: %s", err)
+	}
+
+	al := alertRetreiverFunc(func() []*rules.AlertingRule {
+		return []*rules.AlertingRule{
+			rules.NewAlertingRule(
+				"test_metric3",
+				expr,
+				time.Minute,
+				model.LabelSet{},
+				model.LabelSet{},
+			),
+		}
+	})
+
 	api := &API{
 		Storage:               suite.Storage(),
 		QueryEngine:           suite.QueryEngine(),
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
-		now: func() model.Time { return now },
+		alertRetreiver:        al,
+		now:                   func() model.Time { return now },
 	}
 
 	start := model.Time(0)
@@ -467,6 +492,21 @@ func TestEndpoints(t *testing.T) {
 				ActiveAlertmanagers: []*AlertmanagerTarget{
 					{
 						URL: "http://alertmanager.example.com:8080/api/v1/alerts",
+					},
+				},
+			},
+		}, {
+			endpoint: api.alerts,
+			response: &AlertDiscovery{
+				Alerts: []*Alert{
+					&Alert{
+						Name:        "test_metric3",
+						Query:       "absent(test_metric3) != 1",
+						Duration:    "1m0s",
+						Labels:      model.LabelSet{},
+						Annotations: model.LabelSet{},
+						Status:      "inactive",
+						Activesince: nil,
 					},
 				},
 			},

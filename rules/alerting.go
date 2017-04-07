@@ -116,6 +116,38 @@ func (r *AlertingRule) Name() string {
 	return r.name
 }
 
+// Query returns the query expression of the alert.
+func (r *AlertingRule) Query() promql.Expr {
+	return r.vector
+}
+
+// Duration returns the hold duration of the alert.
+func (r *AlertingRule) Duration() time.Duration {
+	return r.holdDuration
+}
+
+// Labels returns the labels of the alert.
+func (r *AlertingRule) Labels() model.LabelSet {
+	return r.labels
+}
+
+// Annotations returns the annotations of the alert.
+func (r *AlertingRule) Annotations() model.LabelSet {
+	return r.annotations
+}
+
+// Activesince is the time since alert is active i.e pending or firing
+func (r *AlertingRule) Activesince() *time.Time {
+	activealert := &r.active
+	for _, a := range *activealert {
+		if a.ResolvedAt == 0 {
+			val := a.ActiveAt.Time()
+			return &val
+		}
+	}
+	return nil
+}
+
 func (r *AlertingRule) equal(o *AlertingRule) bool {
 	return r.name == o.name && r.labels.Equal(o.labels)
 }
