@@ -5,7 +5,7 @@ language: go
 go:
 - 1.8.x
 
-go_import_path: github.com/prometheus/prometheus
+go_import_path: github.com/dormidon/prometheus
 
 script:
 - make check_license style test
