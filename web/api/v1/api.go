@@ -452,19 +452,34 @@ type AlertDiscovery struct {
 
 // Alert has info about a alert
 type Alert struct {
-	Name        string         `json:"name"`
-	Query       string         `json:"query"`
-	Duration    string         `json:"duration"`
-	Labels      model.LabelSet `json:"labels"`
-	Annotations model.LabelSet `json:"annotations,omitempty"`
-	Status      string         `json:"status"`
-	Activesince *time.Time     `json:"activesince,omitempty"`
+	Name        string            `json:"name"`
+	Query       string            `json:"query"`
+	Duration    string            `json:"duration"`
+	Labels      model.LabelSet    `json:"labels"`
+	Annotations model.LabelSet    `json:"annotations,omitempty"`
+	Status      string            `json:"status"`
+	Activesince *time.Time        `json:"activesince,omitempty"`
+	Firing      []*FiringInstance `json:"firing"`
+}
+
+type FiringInstance struct {
+	Labels model.LabelSet    `json:"labels"`
+	Value  model.SampleValue `json:"value"`
 }
 
 func (api *API) alerts(r *http.Request) (interface{}, *apiError) {
 	alerts := api.alertRetreiver.AlertingRules()
 	res := &AlertDiscovery{Alerts: make([]*Alert, len(alerts))}
 	for i, val := range alerts {
+		firing := make([]*FiringInstance, 0, len(val.ActiveAlerts()))
+		for _, active := range val.ActiveAlerts() {
+			if active.State == rules.StateFiring {
+				firing = append(firing,
+					&FiringInstance{
+						Labels: active.Labels,
+						Value:  active.Value})
+			}
+		}
 		res.Alerts[i] = &Alert{
 			Name:        val.Name(),
 			Query:       fmt.Sprintf("%v", val.Query()),
@@ -473,6 +488,7 @@ func (api *API) alerts(r *http.Request) (interface{}, *apiError) {
 			Annotations: val.Annotations(),
 			Status:      val.State().String(),
 			Activesince: val.Activesince(),
+			Firing:      firing,
 		}
 	}
 

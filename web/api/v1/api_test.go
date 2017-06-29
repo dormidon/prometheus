@@ -507,6 +507,7 @@ func TestEndpoints(t *testing.T) {
 						Annotations: model.LabelSet{},
 						Status:      "inactive",
 						Activesince: nil,
+						Firing:      []*FiringInstance{},
 					},
 				},
 			},
